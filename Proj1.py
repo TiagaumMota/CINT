@@ -39,6 +39,19 @@ def remove_outliers(df):
         return df_new
     
     
+def print_confM(conf_matrix):
+    sns.set(font_scale=1.5)
+    ax = sns.heatmap(conf_matrix, annot=True, cmap='Blues', fmt='g')
+
+    ax.set_xlabel('\nPredicted Values')
+    ax.set_ylabel('Actual Values ')
+
+    #ax.xaxis.set_ticklabels(['0','2', '3'])
+    #ax.yaxis.set_ticklabels(['0','2','3'])
+
+    plt.show()
+
+
 
 #Read data from file
 df = pd.read_csv('Proj1_Dataset.csv',decimal='.', sep=',' )
@@ -68,10 +81,11 @@ print("Problem a)")
 X=  clean_df.iloc[:, 2:11].to_numpy()
 Y=np.reshape(clean_df['MoreThan2'].to_numpy(), (-1,1))
 
-x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=1 - train_ratio , shuffle = False)
-x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=test_ratio/(test_ratio + validation_ratio), shuffle=False)
+x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=1 - train_ratio , shuffle = True)
+x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=test_ratio/(test_ratio + validation_ratio), shuffle=True)
 
-clf = MLPClassifier(hidden_layer_sizes=(10,),activation='logistic',solver='sgd',random_state=1, max_iter=300)
+#clf = MLPClassifier(hidden_layer_sizes=(10,),activation='logistic',solver='sgd',random_state=1, max_iter=300, alpha=0)
+clf = MLPClassifier(hidden_layer_sizes=(10,),activation='relu',solver='lbfgs',random_state=42, max_iter=2000, alpha=1e-5)
 clf.fit(x_train, y_train)
 y_pred=clf.predict(x_val).reshape(-1,1)
 
@@ -81,13 +95,17 @@ print("Recall:", recall_score(y_val, y_pred))
 print("F1-Score:", f1_score(y_val, y_pred))
 print("Confusion Matrix:", confusion_matrix(y_val, y_pred))
 
+#print_confM( confusion_matrix(y_val, y_pred) )
+
+
 print("\n Problem b)")
 Y=np.reshape(clean_df['Persons'].to_numpy(), (-1,1))
 
-x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=1 - train_ratio , shuffle = False)
-x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=test_ratio/(test_ratio + validation_ratio), shuffle=False)
+x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=1 - train_ratio , shuffle = True)
+x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=test_ratio/(test_ratio + validation_ratio), shuffle=True)
 
-clf = MLPClassifier(hidden_layer_sizes=(10,),activation='logistic',solver='sgd',random_state=1, max_iter=300)
+#clf = MLPClassifier(hidden_layer_sizes=(10,),activation='logistic',solver='sgd',random_state=1, max_iter=300, alpha=0)
+clf = MLPClassifier(hidden_layer_sizes=(10,10,),activation='relu',solver='lbfgs',random_state=42, max_iter=2000, alpha=1e-5)
 clf.fit(x_train, y_train)
 y_pred=clf.predict(x_val).reshape(-1,1)
 
@@ -96,4 +114,6 @@ print("Pecision:", precision_score(y_val, y_pred, average='macro'))
 print("Recall:", recall_score(y_val, y_pred, average='macro'))
 print("F1-Score:", f1_score(y_val, y_pred, average='macro'))
 print("Confusion Matrix:", confusion_matrix(y_val, y_pred))
+
+#print_confM(confusion_matrix(y_val, y_pred))
 
