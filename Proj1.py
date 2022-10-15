@@ -3,27 +3,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns 
 
-from sklearn.model_selection import train_test_split
+from imblearn.pipeline import Pipeline as imbpipeline
+from imblearn.over_sampling import SMOTE
+from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, confusion_matrix, f1_score
 from scipy import stats
-
-def remove_outliers1(df):
-    outliers=[]
-
-    for index in range(2,11):
-        column=df.iloc[:,index].to_numpy()
-        q3, q1 = np.percentile(column, [75 ,25])
-        iqr=q3-q1
-
-        upper=np.where(column >= q3 + (1.5*iqr))
-        lower=np.where(column <= q1 - (1.5*iqr))
-
-        outliers.append(upper[0])
-        outliers.append(lower[0])
-    
-    print(outliers)
-
+from sklearn.preprocessing import StandardScaler
 
 def remove_outliers(df):
         threshold = 6
@@ -46,10 +32,19 @@ def print_confM(conf_matrix):
     ax.set_xlabel('\nPredicted Values')
     ax.set_ylabel('Actual Values ')
 
-    #ax.xaxis.set_ticklabels(['0','2', '3'])
-    #ax.yaxis.set_ticklabels(['0','2','3'])
-
     plt.show()
+
+def print_results(y_true, y_pred):
+
+    print("\n\n------------------------------------Results--------------------------------------------")
+    print("Accuracy:", accuracy_score(y_true, y_pred))
+    print("Pecision:", precision_score(y_true, y_pred, average=None))
+    print("Recall:", recall_score(y_true, y_pred, average=None))
+    print("Macro-Pecision:", precision_score(y_true, y_pred, average='macro'))
+    print("Macro-Recall:", recall_score(y_true, y_pred, average='macro'))
+    print("Macro-F1-Score:", f1_score(y_true, y_pred, average='macro'))
+    print("Confusion Matrix:", confusion_matrix(y_true, y_pred))
+    print("---------------------------------------------------------------------------------------")
 
 
 
@@ -71,49 +66,73 @@ inconsistencies = np.where( (clean_df['Persons'] == 0 ) & (clean_df['PIR1']+clea
 #clean_df.iloc[inconsistencies[0], 9:11] = 0
 #clean_df.drop(inconsistencies[0], inplace=True)
 
-train_ratio = 0.70
-validation_ratio = 0.15
-test_ratio = 0.15
-
-#Baseline MLP
-print("Problem a)")
+#........................................................Binary.................................................................
+print("\n\nProblem a)")
 
 X=  clean_df.iloc[:, 2:11].to_numpy()
 Y=np.reshape(clean_df['MoreThan2'].to_numpy(), (-1,1))
 
-x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=1 - train_ratio , shuffle = True)
-x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=test_ratio/(test_ratio + validation_ratio), shuffle=True)
 
-#clf = MLPClassifier(hidden_layer_sizes=(10,),activation='logistic',solver='sgd',random_state=1, max_iter=300, alpha=0)
-clf = MLPClassifier(hidden_layer_sizes=(10,),activation='relu',solver='lbfgs',random_state=42, max_iter=2000, alpha=1e-5)
-clf.fit(x_train, y_train)
-y_pred=clf.predict(x_val).reshape(-1,1)
+X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, stratify=Y, random_state=42)
 
-print("Accuracy:", accuracy_score(y_val, y_pred ))
-print("Pecision:", precision_score(y_val, y_pred))
-print("Recall:", recall_score(y_val, y_pred))
-print("F1-Score:", f1_score(y_val, y_pred))
-print("Confusion Matrix:", confusion_matrix(y_val, y_pred))
+pipeline = imbpipeline(steps = [['smote', SMOTE(random_state=42)],
+                                ['scaler', StandardScaler()],
+                                ['classifier', MLPClassifier(random_state=42)]])
 
-#print_confM( confusion_matrix(y_val, y_pred) )
+stratified_kfold = StratifiedKFold(n_splits=4,
+                                       shuffle=True,
+                                       random_state=42)
 
+param_grid = {'classifier__solver': ['lbfgs'],
+        'classifier__max_iter': [ 300, 500, 1000],
+        'classifier__hidden_layer_sizes': [(10,)],
+        'classifier__activation': ['relu'],
+        'classifier__alpha': [0.00001, 0.0001, 0.001]
+        }
 
+grid_search = GridSearchCV(estimator=pipeline,
+                           param_grid=param_grid,
+                           scoring='f1',
+                           cv=stratified_kfold,
+                           n_jobs=-1)
+
+grid_search.fit(X_train, y_train)
+ 
+print(grid_search.best_params_)
+y_pred=grid_search.predict(X_test).reshape(-1,1)
+print_results(y_test, y_pred)
+
+#........................................................Multi-Class.................................................................
 print("\n Problem b)")
 Y=np.reshape(clean_df['Persons'].to_numpy(), (-1,1))
 
-x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=1 - train_ratio , shuffle = True)
-x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=test_ratio/(test_ratio + validation_ratio), shuffle=True)
 
-#clf = MLPClassifier(hidden_layer_sizes=(10,),activation='logistic',solver='sgd',random_state=1, max_iter=300, alpha=0)
-clf = MLPClassifier(hidden_layer_sizes=(10,10,),activation='relu',solver='lbfgs',random_state=42, max_iter=2000, alpha=1e-5)
-clf.fit(x_train, y_train)
-y_pred=clf.predict(x_val).reshape(-1,1)
+X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, stratify=Y, random_state=42)
+y_train = np.ravel(y_train)
 
-print("Accuracy:", accuracy_score(y_val, y_pred))
-print("Pecision:", precision_score(y_val, y_pred, average='macro'))
-print("Recall:", recall_score(y_val, y_pred, average='macro'))
-print("F1-Score:", f1_score(y_val, y_pred, average='macro'))
-print("Confusion Matrix:", confusion_matrix(y_val, y_pred))
+pipeline = imbpipeline(steps = [['smote', SMOTE(random_state=42)],
+                                ['scaler', StandardScaler()],
+                                ['classifier', MLPClassifier(random_state=42)]])
 
-#print_confM(confusion_matrix(y_val, y_pred))
+stratified_kfold = StratifiedKFold(n_splits=4,
+                                       shuffle=True,
+                                       random_state=42)
 
+param_grid = {'classifier__solver': ['lbfgs'],
+        'classifier__max_iter': [ 1000, 2000],
+        'classifier__hidden_layer_sizes': [(10,10,), (15,10)],
+        'classifier__activation': ['relu'],
+        'classifier__alpha': [0.00001, 0.0001]
+        }
+
+grid_search = GridSearchCV(estimator=pipeline,
+                           param_grid=param_grid,
+                           scoring='f1_macro',
+                           cv=stratified_kfold,
+                           n_jobs=-1)
+
+grid_search.fit(X_train, y_train)
+ 
+print(grid_search.best_params_)
+y_pred=grid_search.predict(X_test).reshape(-1,1)
+print_results(y_test, y_pred)
