@@ -1,11 +1,9 @@
 import numpy as np
 import pandas as pd
 import random
-import statistics as stats
 import matplotlib.pyplot as plt
 
 from deap import base, creator, tools
-from pandas.core import indexing
 
 #Read data from file
 df_distCentral = pd.read_csv('CustDist_WHCentral.csv',decimal='.', sep=',' )
@@ -19,7 +17,7 @@ df_xyCentral = pd.read_csv('CustXY_WHCentral.csv',decimal='.', sep=',' )
 df_xyCorner = pd.read_csv('CustXY_WHCorner.csv',decimal='.', sep=',' )
 
 #Problem considerations
-N_customers = 10          #individual size, (10/30/50)
+N_customers = 50          #individual size, (10/30/50)
 Nruns = 30                #max evaluations=10000
 NGEN = 100                #number of offsprings generation
 CXPB = 0.5                #crossover probability
@@ -82,6 +80,9 @@ def evaluate(individual):
 
 toolbox.register("evaluate", evaluate)
 
+#In order to use search operators from the toolbox, 
+#all zeros have to be removed  from the route and
+# the individuals must be an indexation vector between 0 and (N_customers-1)
 def preSearch(ind1, ind2):
 
     for idx in range(N_customers):
@@ -98,6 +99,9 @@ def preSearch(ind1, ind2):
     else:
         return ind1
 
+#After computing the search operators, 
+#the route has to be re-established (adding 1 to all elements), 
+#the maximum number of orders handled must be imposed - zeros in the route 
 def afterSearch(ind1, ind2):
     NOrders1 = 0
     NOrders2 = 0
@@ -134,6 +138,7 @@ toolbox.register("mate", tools.cxOrdered)
 toolbox.register("mutate", tools.mutShuffleIndexes, indpb=0.05)
 toolbox.register("select", tools.selTournament, tournsize=10)
 
+#Generating the heuristic candidate 
 def heuristic():
     split=50
     customers=coord.iloc[1:N_customers+1]
@@ -145,7 +150,7 @@ def heuristic():
     cust_left=cust_left.sort_values(by=column_headers[2])
 
     #Right
-    cust_right=customers[customers[column_headers[1]]>split]
+    cust_right=customers[customers[column_headers[1]]>=split]
     cust_right=cust_right.sort_values(by=column_headers[2], ascending=False)
 
     cust_merge=cust_left.append(cust_right)
@@ -159,7 +164,11 @@ def main():
     global coord
     warehouse = ['Central Location - ', 'Corner Location - ']
     orders_read = ['50 Orders','File Orders']
-    
+
+    plt.rcParams.update({'font.size': 14})
+    plot_colors = ['steelblue','coral','olivedrab', 'goldenrod']
+    c_id=0
+
     for position in range(2):
         if position == 0:
             distances = df_distCentral
@@ -269,8 +278,9 @@ def main():
 
             # Cnvergence curve
             x=np.arange(NGEN)
-            plt.plot(x,best_gen_cost, label=warehouse[position] + orders_read[case])
-           
+            plt.plot(x,best_gen_cost, label=warehouse[position] + orders_read[case], c=plot_colors[c_id])
+            c_id+=1
+        
     plt.title("%d Customers"% N_customers)
     plt.xlabel("Generations")
     plt.ylabel("Distance")
@@ -279,6 +289,4 @@ def main():
 
 if __name__ == "__main__": 
         main()
-
-
 
