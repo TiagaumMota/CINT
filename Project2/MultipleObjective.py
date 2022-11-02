@@ -5,6 +5,7 @@ import random
 import statistics as stats
 import matplotlib.pyplot as plt
 
+import multiprocessing
 from deap import benchmarks
 from deap.benchmarks.tools import diversity, convergence, hypervolume
 from deap import base, creator, tools
@@ -14,9 +15,12 @@ from deap import base, creator, tools
 df_distCentral = pd.read_csv('CustDist_WHCentral.csv',decimal='.', sep=',' )
 df_ordFile = pd.read_csv('CustOrd.csv',decimal='.', sep=',' )
 
+distances = df_distCentral 
+orders = df_ordFile
+
 
 #Problem considerations
-N_customers = 20         #individual size, (10/30/50)
+N_customers = 50       #individual size, (10/30/50)
 Nruns = 30                #max evaluations=10000
 NGEN = 100                #number of offsprings generation
 CXPB = 0.5                #crossover probability
@@ -37,33 +41,41 @@ def maxOrder(individual):
             cust += 1
             NOrders = 0
         i += 1
-      
+ 
+    return individual
+
+#Computes cost for new individuals
+def MultiCost(individual):
     #Cost to travel between those cities
     N_orders = 0 #Number of current orders
     N_warehouse_visits = 0 #always starts at the warehouse
     distance_cost = [] #Distance between cities
     cargo_totals = [] #Total cargo between visits to the warehouse
     cargo_cost = [] #Cargo in truck while visiting which city
+    cust=N_customers
 
-    for i in range(cust):
-        #Distances between cities
+    for i in range(len(individual)):
         
         if i == 0: #If it's the first city, it is always distance from warehouse
             distance_cost.append(df_distCentral.iloc[0,individual[i]+1]) #because of how columns are organized
         else: #else it's the distance between the city we are visiting and last city visited
             distance_cost.append(df_distCentral.iloc[individual[i],individual[i]]) #not individual -1 because of how columns are organized
-        
+
         if individual[i] == 0: #if the truck is in the warehouse
+            
             cargo_totals.append(N_orders) #Total cargo in the truck for the cities tour is saved
             N_orders = 0
+            cust = cust + 1
+            
         else:
             N_orders += orders.iloc[individual[i],1] #Ammount of cargo for each city in a tour
+        
     #print("individuals:", individual, "\ncost:", distance_cost)
     if N_orders != 0: #In case the last city visted isnt the warehouse, save the total cargo for last tour
         cargo_totals.append(N_orders)
 
     # Now for the cargo cost
-    for i in range(cust):
+    for i in range(len(individual)):
         if individual[i] == 0: 
             N_warehouse_visits +=1 #if in the warehouse, change to a different tour total in list in cargo_totals
             cargo_cost.append(0) #Truck empty when heading to warehouse
@@ -80,17 +92,9 @@ def maxOrder(individual):
 
     Final_Cost = []
     for i1, i2 in zip(cargo_cost, distance_cost):
-        Final_Cost.append(i1*i2)           
-    
-    
-    """print("\nIndividuals:", individual)
-    print("\nDistance_Cost:", distance_cost)
-    print("\nCargo_Cost", cargo_cost)
-    print("\nTOTAL:", Final_Cost)"""
-
-    container = [list(a) for a in zip(individual, Final_Cost)]
-    #return individual
-    return container
+        Final_Cost.append(i1*i2)     
+   
+    return Final_Cost
 
 #Creates an individual randomly
 def createIndividual():
@@ -98,10 +102,12 @@ def createIndividual():
     customers = [i for i in range(1, N_customers+1)]
     random.shuffle(customers)
 
+    customers = maxOrder(customers)
+    cost = MultiCost(customers)
 
-    
-    return maxOrder(customers)
+    container = [list(a) for a in zip(customers, cost)]
 
+    return container
 
 #-----------------------------------------------Setup the Genetic Algorithm------------------------------------------
 #Creating an appropriate type for this minimization problem
@@ -117,7 +123,6 @@ toolbox.register("individual", tools.initIterate, creator.Individual, createIndi
 
 #bag population setup, list of individuals
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-
 
 #Operators 
 #Evaluation functions
@@ -135,106 +140,191 @@ def evalDist(individual):
     return summation
 
 def evalCost(individual):
+ #Cost to travel between those cities
+    N_orders = 0 #Number of current orders
+    N_warehouse_visits = 0 #always starts at the warehouse
+    distance_cost = [] #Distance between cities
+    cargo_totals = [] #Total cargo between visits to the warehouse
+    cargo_cost = [] #Cargo in truck while visiting which city
+    cust=N_customers
+
+    for i in range(len(individual)):
+        
+        if i == 0: #If it's the first city, it is always distance from warehouse
+            distance_cost.append(df_distCentral.iloc[0,individual[i][0]+1]) #because of how columns are organized
+        else: #else it's the distance between the city we are visiting and last city visited
+            distance_cost.append(df_distCentral.iloc[individual[i][0],individual[i][0]]) #not individual -1 because of how columns are organized
+
+        if individual[i][0] == 0: #if the truck is in the warehouse
+            
+            cargo_totals.append(N_orders) #Total cargo in the truck for the cities tour is saved
+            N_orders = 0
+            cust = cust + 1
+            
+        else:
+            N_orders += orders.iloc[individual[i][0],1] #Ammount of cargo for each city in a tour
+        
+    if N_orders != 0: #In case the last city visted isnt the warehouse, save the total cargo for last tour
+        cargo_totals.append(N_orders)
+
+    # Now for the cargo cost
+    for i in range(len(individual)):
+        if individual[i][0] == 0: 
+            N_warehouse_visits +=1 #if in the warehouse, change to a different tour total in list in cargo_totals
+            cargo_cost.append(0) #Truck empty when heading to warehouse
+            flag = 1 #Flag to know when the warehouse is visited
+        else:
+            if i == 0 or flag == 1: #if coming from the warehouse
+                total_to_append = cargo_totals[N_warehouse_visits] #truck is fully loaded (total)
+                flag = 0 
+                
+            else: #if coming from another city
+                total_to_append = total_to_append - orders.iloc[individual[i-1][0],1] #add the remaining on the truck
+
+            cargo_cost.append(total_to_append)
+
+    Final_Cost = []
+    for i1, i2 in zip(cargo_cost, distance_cost):
+        Final_Cost.append(i1*i2)     
+
     summation = 0
     for i in range(1, len(individual)):
-        summation = summation + individual[i][1]
+        summation = summation + Final_Cost[i]
     return summation
 
 #computes the fitness list of an individual
 def evaluation(individual):
     result = []
-    result.append(evalCost(individual))
     result.append(evalDist(individual))
+    result.append(evalCost(individual))
     return result
 
-def preSearch(ind1, ind2):
+def customMutation(individual):
 
+    ind = [a for a,b in individual]
+    ind_ = [b for a,b in individual]
+   
+    for idx in range(N_customers):
+        
+        if ind[idx] == 0: #if warehouse in position indx
+            ind.pop(idx) #remove
+            ind_.pop(idx)  
+        ind[idx] = ind[idx]-1 #go back one because of default CX_ordered
+    
+    new_ind = tools.mutShuffleIndexes(ind, 0.05)[0]
+
+    for idx in range(N_customers):
+        new_ind[idx] = new_ind[idx]+1
+    
+    individual_new = [list(a) for a in zip(new_ind, ind_)]
+
+    return individual_new
+
+def customCX(individual1, individual2):
+
+    ind1 = [a for a,b in individual1]
+    ind2 = [a for a,b in individual2]
+    ind1_ = [b for a,b in individual1]
+    ind2_ = [b for a,b in individual2]
+    
+    
     for idx in range(N_customers):
         if ind1[idx] == 0:
             ind1.pop(idx)
-        ind1[idx] = ind1[idx]-1
-        if ind2 != None:
-            if ind2[idx] == 0:
-                ind2.pop(idx)
-            ind2[idx] = ind2[idx]-1
-    
-    if ind2 != None:
-        return ind1, ind2
-    else:
-        return ind1
+            ind1_.pop(idx)
 
-def afterSearch(ind1, ind2):
+        ind1[idx] = ind1[idx]-1
+
+        if ind2[idx] == 0:
+            ind2.pop(idx)
+            ind2_.pop(idx)
+        
+        ind2[idx] = ind2[idx]-1
+    
+    
+    new_ind1, new_ind2 = tools.cxOrdered(ind1,ind2)
+    
+    for idx in range(N_customers):
+        new_ind1[idx] = new_ind1[idx]+1
+        new_ind2[idx] = new_ind2[idx]+1
+
+    individual1_new = [list(a) for a in zip(new_ind1, ind1_)]
+    individual2_new = [list(a) for a in zip(new_ind2, ind2_)]
+
+    return individual1_new, individual2_new
+
+def afterSearch(individual1, individual2):
+    
     NOrders1 = 0
     NOrders2 = 0
     cust = N_customers
     idx = 0
 
+    ind1 = [a for a,b in individual1]
+    ind1_ = [b for a,b in individual1]
+    
+    if individual2 != None:
+        ind2 = [a for a,b in individual2]
+        ind2_ = [b for a,b in individual2]
+
+    #print("TEST:", len(ind1))
     while idx < cust:
 
-        ind1[idx] = ind1[idx]+1
+        #ind1[idx] = ind1[idx]+1
+
         NOrders1 += orders.iloc[ind1[idx],1]
+        
         if NOrders1 > 1000:
             ind1.insert(idx,0)
-            ind1[idx+1] = ind1[idx+1]-1
+            ind1_.insert(idx,0)
+            
+            #print("antes", ind1[idx+1])
+            ind1[idx+1] = ind1[idx+1]#-1
+            #print("depos", ind1[idx+1])
             cust += 1
             NOrders1 = 0
 
-        if ind2 != None:
-            ind2[idx] = ind2[idx]+1
+        if individual2 != None:
+
+            #ind2[idx] = ind2[idx]+1
+
             NOrders2 += orders.iloc[ind2[idx],1]
             if NOrders2 > 1000:
                 ind2.insert(idx,0)
-                ind2[idx+1] = ind2[idx+1]-1
+                ind2_.insert(idx,0)
+                
+                ind2[idx+1] = ind2[idx+1]#-1
+               
                 NOrders2 = 0
             cust = max(len(ind1), len(ind2))
         idx += 1
     
-    if ind2 != None:
-        return ind1, ind2
+    if individual2 != None:
+        #print("\nind:", len(ind1))
+        #print("\nind:", ind1)
+        #print("\nind:", ind1_)
+        #print("\nindividual:", len(individual1))
+        #print("\nind:", individual1)
+
+   
+        ind1_new = [list(a) for a in zip(ind1, ind1_)]
+        ind2_new = [list(a) for a in zip(ind2, ind2_)]
+        #print("\n NEW:", ind1_new)
+        return ind1_new, ind2_new
     else:
-        return ind1
+        ind1_new = [list(a) for a in zip(ind1, ind1_)]
+        return ind1_new
 
-#custom crossover that crosses the first elements among each other 
-#and the second elements among each other
-def customCX(individual1, individual2):
-    ind1 = [a for a,b in individual1]
-    ind2 = [a for a,b in individual2]
-    ind1_ = [b for a,b in individual1]
-    ind2_ = [b for a,b in individual2]
-
-    new_ind1, new_ind2 = tools.cxOrdered(ind1,ind2)
-    new_ind1_, new_ind2_ = tools.cxTwoPoint(ind1_,ind2_)
-
-    for i in range(len(individual1)):
-        individual1[i][0] = new_ind1[i]
-        individual2[i][0] = new_ind2[i]
-        individual1[i][1] = new_ind1_[i]
-        individual2[i][1] = new_ind2_[i]
-
-    return individual1, individual2
     
 toolbox.register("evaluate", evaluation)
-toolbox.register("mate", tools.cxOrdered)
-toolbox.register("mutate", tools.mutShuffleIndexes, indpb=0.05)
+toolbox.register("mate", customCX)
+toolbox.register("mutate", customMutation)
 toolbox.register("select", tools.selNSGA2)
 
 def main():
     
-    global distances
-    global orders 
-    global coord
-    warehouse = ['Central Location']
-    orders_read = ['File Orders']
-    
-    #Info from the datasets
-    distances = df_distCentral
-    orders = df_ordFile
-
-    all_results = np.zeros([Nruns,1])
-    best_fitness = 1000000     #fitness value of the best run
-    gen_cost = []              #fitness values across generations for best run
-    best_path = []
-
+    #For results:
+    hypervols = []
     stats = tools.Statistics(lambda ind: ind.fitness.values)
     # stats.register("avg", numpy.mean, axis=0)
     # stats.register("std", numpy.std, axis=0)
@@ -243,105 +333,116 @@ def main():
     logbook = tools.Logbook()
     logbook.header = "gen", "evals", "min", "max"
 
+    pareto = tools.ParetoFront()
 
-    for i in range(Nruns):
-        random.seed(random.randint(1, 10000))
+    random.seed(random.randint(1, 10000))
 
-        #Create initial population, n individuals
-        pop = toolbox.population(n=N_pop)
+    #Create initial population, n individuals
+    pop = toolbox.population(n=N_pop)
 
-        #------------------Start evolution-----------------------
+    #------------------Start evolution-----------------------
+    # Evaluate the individuals with an invalid fitness
+    invalid_ind = [ind for ind in pop if not ind.fitness.valid]
+    fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
+    for ind, fit in zip(invalid_ind, fitnesses):
+        ind.fitness.values = fit
+    
+    #so far so good
+
+    # This is just to assign the crowding distance to the individuals
+    # no actual selection is done
+    pop = toolbox.select(pop, len(pop))
+    record = stats.compile(pop)
+    logbook.record(gen=0, evals=len(invalid_ind), **record)
+    print(logbook.stream)
+
+    # Begin the evolution
+    
+    # Through generations of offsprings 
+    for g in range(1, NGEN):
+        # Select the next generation individuals
+        offspring = tools.selTournamentDCD(pop, len(pop))
+        offspring = [toolbox.clone(ind) for ind in offspring]
+
+        # Apply crossover and mutation on the offspring
+        for child1, child2 in zip(offspring[::2], offspring[1::2]):
+        
+            if random.random() < CXPB:
+                toolbox.mate(child1, child2)
+                
+                del child1.fitness.values
+                del child2.fitness.values
+
+                child1, child2 = afterSearch(child1, child2)
+                
+        for mutant in offspring:
+            if random.random() < MUTPB:
+                toolbox.mutate(mutant)
+                del mutant.fitness.values
+                mutant = afterSearch(mutant, None )
+        
+            
+        # Since the content of some of our offspring changed during the last step,
+        #  we now need to re-evaluate their fitnesses.
         # Evaluate the individuals with an invalid fitness
-        invalid_ind = [ind for ind in pop if not ind.fitness.valid]
-        fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
+        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+        fitnesses = map(toolbox.evaluate, invalid_ind)
+        
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
         
-        #so far so good
-
-        # This is just to assign the crowding distance to the individuals
-        # no actual selection is done
-        pop = toolbox.select(pop, len(pop))
+        pop = toolbox.select(pop + offspring, N_pop)
         record = stats.compile(pop)
-        logbook.record(gen=0, evals=len(invalid_ind), **record)
-        print(logbook.stream)
-    
-        # Begin the evolution
-        gen_cost=np.zeros([NGEN,1])
+        pareto.update(pop)
+        #hypervols.append(hypervolume(pareto, ref))
+            
         
-        # Through generations of offsprings 
-        for g in range(1, NGEN):
-            # Select the next generation individuals
-            offspring = tools.selTournamentDCD(pop, len(pop))
-            offspring = [toolbox.clone(ind) for ind in offspring]
-
-            # Apply crossover and mutation on the offspring
-            for child1, child2 in zip(offspring[::2], offspring[1::2]):
             
-                if random.random() < CXPB:
-                    child1,child2 = preSearch(child1,child2)
-                    toolbox.mate(child1, child2)
-                    
-                    del child1.fitness.values
-                    del child2.fitness.values
+    # best fitness value of each generation
+    return pop, pareto
 
-                    child1, child2 = afterSearch(child1, child2)
-                    
-            for mutant in offspring:
-                if random.random() < MUTPB:
-                    mutant = preSearch(mutant, None )
-                    
-                    toolbox.mutate(mutant)
-                    del mutant.fitness.values
-                    mutant = afterSearch(mutant, None )
-            
-                
-            # Since the content of some of our offspring changed during the last step,
-            #  we now need to re-evaluate their fitnesses.
-            # Evaluate the individuals with an invalid fitness
-            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitnesses = map(toolbox.evaluate, invalid_ind)
-            
-            for ind, fit in zip(invalid_ind, fitnesses):
-                ind.fitness.values = fit
-            # The population is entirely replaced by the offspring - selected parents 
-            pop[:] = offspring
-                
-            elite = tools.selBest(pop, 1)[0]
-                
-            # best fitness value of each generation
-            gen_cost[g]=elite.fitness.values[0]
+    #------------------------------ End of (successful) evolution -----------------------------------
+    
+   
 
-        #------------------------------ End of (successful) evolution -----------------------------------
+if __name__ == "__main__":
+    #   Multiprocessing pool
+    pool = multiprocessing.Pool()
+    toolbox.register("map", pool.map)
+
+    pop, optimal_front = main()
         
-        elite = tools.selBest(pop, 1)[0]
-            
-        #Saving the best solution
-        if best_fitness > elite.fitness.values[0]:
-            best_gen_cost = gen_cost
-            best_fitness = elite.fitness.values[0]
-            best_fitness_i=i
-            best_path = list(elite)
-    
-        all_results[i]=elite.fitness.values[0]
-    
-    print("=============================================")
-    print(warehouse + orders_read )
-    print("Mean: ",np.mean(all_results))
-    print("STD: ",np.std(all_results))
-    print("Best Fitness: ", best_fitness, "run: ", best_fitness_i )
-    print("Best path: ", best_path)
+    for ind in optimal_front:
+        print()
+        print(ind)
+        print('Dist = ' + str(evalDist(ind)))
+        print('Cost = ' + str(evalCost(ind)))
+        print()
 
-    # Cnvergence curve
-    x=np.arange(NGEN)
-    plt.plot(x,best_gen_cost, label=warehouse + orders_read)
-           
-    plt.title("%d Customers"% N_customers)
-    plt.xlabel("Generations")
-    plt.ylabel("Distance")
-    plt.legend()
+    #%% Plot the Pareto Front
+    x, y = zip(*[ind.fitness.values for ind in optimal_front])
+
+    fig = plt.figure()
+    plt.scatter(x, y, c='r', marker='x')
+    plt.xlabel('Cost')
+    plt.grid(True)
+    plt.ylabel('Distance')
     plt.show()
 
+    #%% Plot the hypervolume
+    """fig2 = plt.figure()
+    x = [i for i in range(1, NGEN)]
+    y = hypervols
+    plt.scatter(x, y, c='r')
+    plt.ylabel('Hypervolume')
+    plt.grid(True)
+    plt.xlabel('Nr gens')
+    plt.show()"""
 
-if __name__ == "__main__": 
-        main()
+    #%% Print the coordinates of the pareto front's points
+    for ind in optimal_front:
+        print()
+        print('Dist = ' + str(evalDist(ind)))
+        print('Cost = ' + str(evalCost(ind)))
+        print()
+    #%%
