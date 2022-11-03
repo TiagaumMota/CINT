@@ -21,11 +21,12 @@ orders = df_ordFile
 
 #Problem considerations
 N_customers = 50       #individual size, (10/30/50)
-Nruns = 30                #max evaluations=10000
 NGEN = 100                #number of offsprings generation
 CXPB = 0.5                #crossover probability
 MUTPB = 0.2               #mutation probability
 N_pop = 100               #number of individuals
+
+#NGEN * N_pop = 10 000
 
 
 #Truck only transports a maximum of 1000 products at a time
@@ -199,18 +200,20 @@ def evaluation(individual):
     result.append(evalCost(individual))
     return result
 
-def customMutation(individual):
+def customMutation(individual): #verified
 
     ind = [a for a,b in individual]
     ind_ = [b for a,b in individual]
-   
+
     for idx in range(N_customers):
         
         if ind[idx] == 0: #if warehouse in position indx
+
             ind.pop(idx) #remove
             ind_.pop(idx)  
-        ind[idx] = ind[idx]-1 #go back one because of default CX_ordered
-    
+        
+        ind[idx] = ind[idx]-1 #go back one because of index for tools
+   
     new_ind = tools.mutShuffleIndexes(ind, 0.05)[0]
 
     for idx in range(N_customers):
@@ -220,33 +223,31 @@ def customMutation(individual):
 
     return individual_new
 
-def customCX(individual1, individual2):
-
+def customCX(individual1, individual2): #verified
+    
     ind1 = [a for a,b in individual1]
     ind2 = [a for a,b in individual2]
     ind1_ = [b for a,b in individual1]
     ind2_ = [b for a,b in individual2]
-    
     
     for idx in range(N_customers):
         if ind1[idx] == 0:
             ind1.pop(idx)
             ind1_.pop(idx)
 
-        ind1[idx] = ind1[idx]-1
-
         if ind2[idx] == 0:
             ind2.pop(idx)
             ind2_.pop(idx)
-        
+                
+    for idx in range(N_customers):
+        ind1[idx] = ind1[idx]-1
         ind2[idx] = ind2[idx]-1
-    
-    
+
     new_ind1, new_ind2 = tools.cxOrdered(ind1,ind2)
     
     for idx in range(N_customers):
         new_ind1[idx] = new_ind1[idx]+1
-        new_ind2[idx] = new_ind2[idx]+1
+        new_ind2[idx] = new_ind2[idx]+1   
 
     individual1_new = [list(a) for a in zip(new_ind1, ind1_)]
     individual2_new = [list(a) for a in zip(new_ind2, ind2_)]
@@ -267,38 +268,29 @@ def afterSearch(individual1, individual2):
         ind2 = [a for a,b in individual2]
         ind2_ = [b for a,b in individual2]
 
-    #print("TEST:", len(ind1))
-    while idx < cust:
+    #print("\nindividual:", individual1)
 
-        #ind1[idx] = ind1[idx]+1
+    while idx < cust:
 
         NOrders1 += orders.iloc[ind1[idx],1]
         
         if NOrders1 > 1000:
+
             ind1.insert(idx,0)
             ind1_.insert(idx,0)
-            
-            #print("antes", ind1[idx+1])
-            ind1[idx+1] = ind1[idx+1]#-1
-            #print("depos", ind1[idx+1])
             cust += 1
             NOrders1 = 0
 
         if individual2 != None:
 
-            #ind2[idx] = ind2[idx]+1
-
             NOrders2 += orders.iloc[ind2[idx],1]
             if NOrders2 > 1000:
                 ind2.insert(idx,0)
                 ind2_.insert(idx,0)
-                
-                ind2[idx+1] = ind2[idx+1]#-1
-               
                 NOrders2 = 0
             cust = max(len(ind1), len(ind2))
         idx += 1
-    
+    #print("\nindividual: after", individual1)
     if individual2 != None:
         #print("\nind:", len(ind1))
         #print("\nind:", ind1)
@@ -315,7 +307,21 @@ def afterSearch(individual1, individual2):
         ind1_new = [list(a) for a in zip(ind1, ind1_)]
         return ind1_new
 
-    
+#computes the reference point as if the path of salesman was always the worst possible
+def refPoint(pop):
+    y1 = distances.iloc[:N_customers,:N_customers].to_numpy().max() * N_customers
+    #x1 = costCar.iloc[:N_customers,:N_customers].to_numpy().max() * N_customers
+    max_value = max(sublist[1] for sublist in pop)    
+    x = max_value[1] * N_customers
+    y = y1
+
+    x = float(x)
+    y = float(y)
+    print('XY = ' + str(x) + ' ' + str(y))
+    return (x,y) 
+
+
+
 toolbox.register("evaluate", evaluation)
 toolbox.register("mate", customCX)
 toolbox.register("mutate", customMutation)
@@ -339,6 +345,8 @@ def main():
 
     #Create initial population, n individuals
     pop = toolbox.population(n=N_pop)
+    
+    ref = refPoint(pop)
 
     #------------------Start evolution-----------------------
     # Evaluate the individuals with an invalid fitness
@@ -354,7 +362,7 @@ def main():
     pop = toolbox.select(pop, len(pop))
     record = stats.compile(pop)
     logbook.record(gen=0, evals=len(invalid_ind), **record)
-    print(logbook.stream)
+    #print(logbook.stream)
 
     # Begin the evolution
     
@@ -366,15 +374,21 @@ def main():
 
         # Apply crossover and mutation on the offspring
         for child1, child2 in zip(offspring[::2], offspring[1::2]):
-        
+
             if random.random() < CXPB:
+                #print("\nchild1:",child1)
+                #print("\nchild2:",child1)
                 toolbox.mate(child1, child2)
+                #print("\nchild1: cx",child1)
+                #print("\nchild2: cx",child1)
                 
                 del child1.fitness.values
                 del child2.fitness.values
 
                 child1, child2 = afterSearch(child1, child2)
-                
+                #print("\nchild1 after:",child1)
+                #print("\nchild2 after:",child1)
+        
         for mutant in offspring:
             if random.random() < MUTPB:
                 toolbox.mutate(mutant)
@@ -393,13 +407,15 @@ def main():
         
         pop = toolbox.select(pop + offspring, N_pop)
         record = stats.compile(pop)
+        logbook.record(gen=g, evals=len(invalid_ind), **record)
+        
         pareto.update(pop)
-        #hypervols.append(hypervolume(pareto, ref))
+        hypervols.append(hypervolume(pareto, ref))
             
         
             
     # best fitness value of each generation
-    return pop, pareto
+    return pop, pareto, hypervols
 
     #------------------------------ End of (successful) evolution -----------------------------------
     
@@ -410,7 +426,7 @@ if __name__ == "__main__":
     pool = multiprocessing.Pool()
     toolbox.register("map", pool.map)
 
-    pop, optimal_front = main()
+    pop, optimal_front, hypervols = main()
         
     for ind in optimal_front:
         print()
@@ -430,14 +446,14 @@ if __name__ == "__main__":
     plt.show()
 
     #%% Plot the hypervolume
-    """fig2 = plt.figure()
+    fig2 = plt.figure()
     x = [i for i in range(1, NGEN)]
     y = hypervols
     plt.scatter(x, y, c='r')
     plt.ylabel('Hypervolume')
     plt.grid(True)
     plt.xlabel('Nr gens')
-    plt.show()"""
+    plt.show()
 
     #%% Print the coordinates of the pareto front's points
     for ind in optimal_front:
