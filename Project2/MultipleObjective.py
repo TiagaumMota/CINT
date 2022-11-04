@@ -20,10 +20,10 @@ orders = df_ordFile
 
 
 #Problem considerations
-N_customers = 50       #individual size, (10/30/50)
+N_customers = 202ª       #individual size, (10/30/50)
 NGEN = 100                #number of offsprings generation
-CXPB = 0.5                #crossover probability
-MUTPB = 0.2               #mutation probability
+CXPB = 0.9                #crossover probability
+MUTPB = 0.1               #mutation probability
 N_pop = 100               #number of individuals
 
 #NGEN * N_pop = 10 000
@@ -214,7 +214,7 @@ def customMutation(individual): #verified
         
         ind[idx] = ind[idx]-1 #go back one because of index for tools
    
-    new_ind = tools.mutShuffleIndexes(ind, 0.05)[0]
+    new_ind = tools.mutShuffleIndexes(ind, MUTPB)[0]
 
     for idx in range(N_customers):
         new_ind[idx] = new_ind[idx]+1
@@ -307,12 +307,13 @@ def afterSearch(individual1, individual2):
         ind1_new = [list(a) for a in zip(ind1, ind1_)]
         return ind1_new
 
-#computes the reference point as if the path of salesman was always the worst possible
+#computes the reference point as if the path of salesman 
+#was always the worst possible
 def refPoint(pop):
     y1 = distances.iloc[:N_customers,:N_customers].to_numpy().max() * N_customers
     #x1 = costCar.iloc[:N_customers,:N_customers].to_numpy().max() * N_customers
     max_value = max(sublist[1] for sublist in pop)    
-    x = max_value[1] * N_customers
+    x = (80 * 100 * N_customers)
     y = y1
 
     x = float(x)
@@ -376,39 +377,31 @@ def main():
         for child1, child2 in zip(offspring[::2], offspring[1::2]):
 
             if random.random() < CXPB:
-                #print("\nchild1:",child1)
-                #print("\nchild2:",child1)
+                print("\nchild1:",child1)
+                print("\nchild2:",child1)
                 toolbox.mate(child1, child2)
-                #print("\nchild1: cx",child1)
-                #print("\nchild2: cx",child1)
                 
-                del child1.fitness.values
-                del child2.fitness.values
-
-                child1, child2 = afterSearch(child1, child2)
-                #print("\nchild1 after:",child1)
-                #print("\nchild2 after:",child1)
         
-        for mutant in offspring:
-            if random.random() < MUTPB:
-                toolbox.mutate(mutant)
-                del mutant.fitness.values
-                mutant = afterSearch(mutant, None )
-        
-            
+            toolbox.mutate(child1)
+            toolbox.mutate(child2)
+            print("\nchild1: cx",child1)
+            print("\nchild2: cx",child1)
+            del child1.fitness.values
+            del child2.fitness.values
+            child1, child2 = afterSearch(child1, child2)
+      
         # Since the content of some of our offspring changed during the last step,
         #  we now need to re-evaluate their fitnesses.
         # Evaluate the individuals with an invalid fitness
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-        fitnesses = map(toolbox.evaluate, invalid_ind)
-        
+        fitnesses = map(toolbox.evaluate, invalid_ind)     
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
         
         pop = toolbox.select(pop + offspring, N_pop)
         record = stats.compile(pop)
         logbook.record(gen=g, evals=len(invalid_ind), **record)
-        
+        #print(logbook.stream)
         pareto.update(pop)
         hypervols.append(hypervolume(pareto, ref))
             
